@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask CRUD App</title>
+    <style>
+        :root {
+            --bg: #0f172a; --surface: #1e293b; --border: #334155;
+            --text: #e2e8f0; --muted: #94a3b8; --accent: #3b82f6;
+            --green: #22c55e; --red: #ef4444; --yellow: #eab308;
+            --radius: 10px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 2rem 1rem; }
+        .container { max-width: 720px; margin: 0 auto; }
+
+        h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 1.5rem; display: flex; align-items: center; gap: .5rem; }
+        h1 span { background: var(--accent); color: #fff; font-size: .7rem; padding: 3px 8px; border-radius: 20px; vertical-align: middle; }
+
+        /* Flash Messages */
+        .flash { padding: .7rem 1rem; border-radius: var(--radius); margin-bottom: 1rem; font-size: .9rem; }
+        .flash.success { background: #16a34a22; border: 1px solid var(--green); color: var(--green); }
+        .flash.error { background: #ef444422; border: 1px solid var(--red); color: var(--red); }
+
+        /* Create Form */
+        .create-form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.2rem; margin-bottom: 1.5rem; }
+        .create-form h2 { font-size: 1rem; margin-bottom: .8rem; color: var(--muted); }
+        .form-row { display: flex; gap: .5rem; margin-bottom: .5rem; }
+        input, textarea, select, button {
+            font-family: inherit; font-size: .9rem; border: 1px solid var(--border);
+            border-radius: 8px; padding: .55rem .8rem; background: var(--bg); color: var(--text); outline: none;
+        }
+        input:focus, textarea:focus { border-color: var(--accent); }
+        input[type="text"] { flex: 1; }
+        textarea { width: 100%; resize: vertical; min-height: 50px; }
+        button { cursor: pointer; border: none; font-weight: 600; transition: opacity .15s; }
+        button:hover { opacity: .85; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-danger { background: var(--red); color: #fff; }
+        .btn-sm { padding: .35rem .65rem; font-size: .8rem; }
+        .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+
+        /* Filters */
+        .filters { display: flex; gap: .5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
+        .filters a {
+            text-decoration: none; color: var(--muted); padding: .35rem .75rem;
+            border-radius: 20px; font-size: .85rem; border: 1px solid var(--border); transition: all .15s;
+        }
+        .filters a.active, .filters a:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .search-box { margin-left: auto; }
+        .search-box form { display: flex; gap: .4rem; }
+        .search-box input { width: 160px; }
+
+        /* Items */
+        .item-card {
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 1rem 1.2rem; margin-bottom: .6rem; transition: border-color .15s;
+        }
+        .item-card:hover { border-color: var(--accent); }
+        .item-header { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; }
+        .item-title { font-weight: 600; font-size: 1rem; }
+        .item-title.completed { text-decoration: line-through; color: var(--muted); }
+        .item-desc { color: var(--muted); font-size: .85rem; margin-top: .3rem; }
+        .item-meta { display: flex; gap: .8rem; margin-top: .5rem; font-size: .75rem; color: var(--muted); }
+        .item-actions { display: flex; gap: .3rem; flex-shrink: 0; }
+        .badge {
+            display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: .7rem; font-weight: 600;
+        }
+        .badge.active { background: #22c55e22; color: var(--green); }
+        .badge.completed { background: #3b82f622; color: var(--accent); }
+        .badge.archived { background: #eab30822; color: var(--yellow); }
+
+        /* Edit Modal */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0; background: #000a; z-index: 100;
+            justify-content: center; align-items: center;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal {
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 1.5rem; width: 90%; max-width: 450px;
+        }
+        .modal h3 { margin-bottom: 1rem; }
+        .modal label { font-size: .85rem; color: var(--muted); display: block; margin: .6rem 0 .25rem; }
+        .modal input, .modal textarea, .modal select { width: 100%; }
+        .modal-actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: 1rem; }
+
+        .empty { text-align: center; padding: 3rem; color: var(--muted); }
+        .count { font-size: .85rem; color: var(--muted); margin-bottom: .8rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📋 Flask CRUD <span>SQLite</span></h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+        <div class="flash {{ cat }}">{{ msg }}</div>
+        {% endfor %}{% endwith %}
+
+        <!-- Create -->
+        <div class="create-form">
+            <h2>+ New Item</h2>
+            <form method="POST" action="{{ url_for('create') }}">
+                <div class="form-row">
+                    <input type="text" name="title" placeholder="Title *" required maxlength="200">
+                    <button type="submit" class="btn-primary">Add</button>
+                </div>
+                <textarea name="description" placeholder="Description (optional)" maxlength="1000"></textarea>
+            </form>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+            <a href="?status=all" class="{{ 'active' if filter_status=='all' }}">All</a>
+            <a href="?status=active" class="{{ 'active' if filter_status=='active' }}">Active</a>
+            <a href="?status=completed" class="{{ 'active' if filter_status=='completed' }}">Completed</a>
+            <a href="?status=archived" class="{{ 'active' if filter_status=='archived' }}">Archived</a>
+            <div class="search-box">
+                <form method="GET">
+                    <input type="hidden" name="status" value="{{ filter_status }}">
+                    <input type="text" name="q" value="{{ search }}" placeholder="Search...">
+                    <button class="btn-sm btn-ghost" type="submit">🔍</button>
+                </form>
+            </div>
+        </div>
+
+        <p class="count">{{ items|length }} item{{ 's' if items|length != 1 }}</p>
+
+        <!-- Items -->
+        {% if items %}
+        {% for item in items %}
+        <div class="item-card">
+            <div class="item-header">
+                <div>
+                    <div class="item-title {{ 'completed' if item.status == 'completed' }}">{{ item.title }}</div>
+                    {% if item.description %}<div class="item-desc">{{ item.description }}</div>{% endif %}
+                    <div class="item-meta">
+                        <span class="badge {{ item.status }}">{{ item.status }}</span>
+                        <span>{{ item.created_at[:16] }}</span>
+                    </div>
+                </div>
+                <div class="item-actions">
+                    <form method="POST" action="{{ url_for('toggle', item_id=item.id) }}">
+                        <button class="btn-sm btn-ghost" title="Toggle status">{{ '↩️' if item.status=='completed' else '✅' }}</button>
+                    </form>
+                    <button class="btn-sm btn-ghost" onclick="openEdit({{ item.id }}, `{{ item.title|e }}`, `{{ item.description|e }}`, '{{ item.status }}')" title="Edit">✏️</button>
+                    <form method="POST" action="{{ url_for('delete', item_id=item.id) }}" onsubmit="return confirm('Delete this item?')">
+                        <button class="btn-sm btn-danger" title="Delete">🗑️</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="empty">No items found. Create one above!</div>
+        {% endif %}
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal">
+            <h3>✏️ Edit Item</h3>
+            <form method="POST" id="editForm">
+                <label>Title</label>
+                <input type="text" name="title" id="editTitle" required maxlength="200">
+                <label>Description</label>
+                <textarea name="description" id="editDesc" maxlength="1000"></textarea>
+                <label>Status</label>
+                <select name="status" id="editStatus">
+                    <option value="active">Active</option>
+                    <option value="completed">Completed</option>
+                    <option value="archived">Archived</option>
+                </select>
+                <div class="modal-actions">
+                    <button type="button" class="btn-sm btn-ghost" onclick="closeEdit()">Cancel</button>
+                    <button type="submit" class="btn-sm btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function openEdit(id, title, desc, status) {
+            document.getElementById('editForm').action = '/update/' + id;
+            document.getElementById('editTitle').value = title;
+            document.getElementById('editDesc').value = desc;
+            document.getElementById('editStatus').value = status;
+            document.getElementById('editModal').classList.add('open');
+        }
+        function closeEdit() { document.getElementById('editModal').classList.remove('open'); }
+        document.getElementById('editModal').addEventListener('click', function(e) {
+            if (e.target === this) closeEdit();
+        });
+    </script>
+</body>
+</html>
